@@ -1,6 +1,7 @@
 """SQLite persistence and calendar math for Stay in Path (no GUI dependencies)."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -67,6 +68,10 @@ class Store:
     def habits(self):
         return [dict(r) for r in self.db.execute("SELECT * FROM habits WHERE active=1 ORDER BY id").fetchall()]
 
+    def archived_habits(self):
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM habits WHERE active=0 ORDER BY id DESC").fetchall()]
+
     def add_habit(self, name: str, kind: str, goal_minutes: int = 1):
         name = name.strip()
         if not name or len(name) > 80:
@@ -79,10 +84,35 @@ class Store:
             self.db.execute("INSERT INTO habits(name,kind,goal_minutes,created_on) VALUES (?,?,?,?)",
                             (name, kind, int(goal_minutes) if kind == 'time' else 1, date.today().isoformat()))
 
+    def update_habit(self, habit_id: int, name: str, goal_minutes: int = 1):
+        """Rename a habit and, for timed habits, change its daily target."""
+        name = name.strip()
+        if not name or len(name) > 80:
+            raise ValueError("Habit name must be 1–80 characters.")
+        row = self.db.execute("SELECT kind FROM habits WHERE id=?", (habit_id,)).fetchone()
+        if row is None:
+            raise ValueError("Habit not found.")
+        goal = int(goal_minutes) if row[0] == 'time' else 1
+        if not 1 <= goal <= 1440:
+            raise ValueError("Goal must be between 1 and 1440 minutes.")
+        with self.db:
+            self.db.execute("UPDATE habits SET name=?, goal_minutes=? WHERE id=?",
+                            (name, goal, habit_id))
+
     def delete_habit(self, habit_id: int):
         """Archive the habit without erasing historical logs or focus sessions."""
         with self.db:
             self.db.execute("UPDATE habits SET active=0 WHERE id=?", (habit_id,))
+
+    def restore_habit(self, habit_id: int):
+        """Bring an archived habit back into the active lists and graphs."""
+        with self.db:
+            self.db.execute("UPDATE habits SET active=1 WHERE id=?", (habit_id,))
+
+    def delete_habit_permanently(self, habit_id: int):
+        """Erase the habit together with all of its logs (irreversible)."""
+        with self.db:
+            self.db.execute("DELETE FROM habits WHERE id=?", (habit_id,))
 
     def log_value(self, habit_id: int, day: str | None = None) -> float:
         day = day or date.today().isoformat()
@@ -133,6 +163,32 @@ class Store:
     def save_setting(self, key: str, value: str):
         with self.db:
             self.db.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+    def save_focus_state(self, habit_id: int, running_seconds: float, paused: bool, segment_start: str):
+        """Persist an unfinished focus session so it survives sleep, crashes and restarts."""
+        self.save_setting('focus_session', json.dumps({
+            'habit_id': int(habit_id),
+            'running_seconds': round(float(running_seconds), 3),
+            'paused': bool(paused),
+            'segment_start': segment_start,
+        }))
+
+    def focus_state(self):
+        """Return the saved focus session dict, or None when nothing is pending."""
+        raw = self.setting('focus_session', '')
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return None
+        if not isinstance(data, dict) or 'habit_id' not in data:
+            return None
+        return data
+
+    def clear_focus_state(self):
+        with self.db:
+            self.db.execute("DELETE FROM settings WHERE key='focus_session'")
 
     def _all_logs(self, start: str, end: str) -> dict[tuple[int, str], float]:
         return {(r['habit_id'], r['day']): float(r['value']) for r in self.db.execute(
@@ -196,7 +252,9 @@ class Store:
         week_start = today - timedelta(days=today.weekday())
         prev_start = week_start - timedelta(days=7)
         first_day = min((date.fromisoformat(h['created_on']) for h in self.habits()), default=today)
-        calendar = self.calendar(max(14, (today - first_day).days + 1), today=today)
+        # Cover the whole previous week too, so the comparison never reads past the calendar edge.
+        span = max(14, (today - prev_start).days + 1, (today - first_day).days + 1)
+        calendar = self.calendar(span, today=today)
 
         def avg(start, end):
             values = [calendar.get((start + timedelta(days=i)).isoformat()) for i in range((end - start).days + 1)]

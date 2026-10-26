@@ -8,10 +8,13 @@ a floating desktop widget, mission progress, focus timer and weekly review.
 ## Features
 
 - **Yes/No habits** and **timed habits** (minutes per day)
+- **Edit a habit** (rename, change the daily target) or **archive** it
+- **Restore archived habits** or delete them permanently from the Habits page
 - **Weighted heatmap**: average completion of active habits, normalized to each target
 - **Individual heatmaps** and **current/longest daily streaks**
 - **One Main Mission** with a title, optional deadline, completed and total milestones
 - **Focus Timer** that adds recorded time to a timed habit when you press *Stop & Save*
+- **Crash/sleep-safe timer**: a running session is remembered and offered again after a restart
 - **Weekly Review**: completion percentages, focus minutes, and prior-week comparison
 - **Always-on-top desktop widget**, movable by dragging its heading, and hide/show via tray
 - **Windows tray icon** and optional **Start with Windows** control *(see below)*
@@ -19,6 +22,9 @@ a floating desktop widget, mission progress, focus timer and weekly review.
 
 ### Screenshot / visuals
 
+The app uses a dark, calm "control room" look: a slowly drifting aurora background, glass
+cards with neon corner ticks, animated rings/counters/bars, a pulsing focus timer, crossfading
+page changes and slide-in toasts. Motion is deliberately subtle and never blocks input.
 The logo was generated for the project and is distributed with the app.
 
 ## Install on Windows (from source)
@@ -87,8 +93,8 @@ python -m unittest discover -s tests -v
 ## Limitations of v0.1
 
 - Windows is the target platform. The floating widget is **always on top**, not part of the Windows desktop wallpaper.
-- Focus sessions are saved to the date when *Stop & Save* is clicked. They are not automatically saved on unexpected shutdown.
-- Archived habits keep their stored data but aren't included in current graphs and statistics.
+- Focus time is saved to the date when *Stop & Save* is clicked. Timer state survives sleep and restarts, but a session is only written to your habit log when you stop it.
+- Archived habits keep their stored data but aren't included in current graphs and statistics. Restore one from the Habits page to bring it back.
 - There is no account sync, export UI, notifications, or automated code signing.
 
 ## License
